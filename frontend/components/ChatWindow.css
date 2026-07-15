@@ -1,0 +1,12 @@
+.chat-window {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.chat-window__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 28px 0 12px;
+}

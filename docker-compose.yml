@@ -1,0 +1,36 @@
+# Local development / testing only. Brings up the backend + a local MongoDB
+# so you don't need `mongod` installed on your machine. Not used for
+# production deployment (see README.md's Deployment section for
+# Railway + MongoDB Atlas instead).
+#
+# Usage:
+#   cp .env.example .env   # fill in HF_TOKEN, JWT_SECRET, etc.
+#   docker compose up --build
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Overrides whatever MONGODB_URI is in .env — inside Compose's network,
+      # the Mongo container is reachable at the service name "mongo".
+      MONGODB_URI: mongodb://mongo:27017
+    depends_on:
+      - mongo
+    volumes:
+      - vectorstore_data:/app/backend/vectorstore
+      - memory_data:/app/backend/memory
+
+volumes:
+  mongo_data:
+  vectorstore_data:
+  memory_data:

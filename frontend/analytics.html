@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TechMart Support — Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0B1420;
+    --panel: #101D2E;
+    --panel-raised: #16263B;
+    --line: #223349;
+    --text: #E7ECF3;
+    --text-dim: #8FA1B8;
+    --signal: #2DD9C6;
+    --signal-dim: #1A5C56;
+    --amber: #F5A623;
+    --amber-dim: #4A3717;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #10233a 0%, transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 32px 16px 60px;
+  }
+  .app {
+    width: 100%;
+    max-width: 1080px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .mark {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--signal), #1596A9);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    color: #06201D;
+    flex-shrink: 0;
+  }
+  .brand h1 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 0; }
+  .brand p { margin: 0; font-size: 12.5px; color: var(--text-dim); }
+
+  .range-toggle {
+    display: flex;
+    gap: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 4px;
+  }
+  .range-toggle button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 7px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .range-toggle button.active { background: var(--signal-dim); color: var(--signal); }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+  }
+  .stat-card {
+    background: var(--panel-raised);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .stat-card .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .stat-card .value {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .stat-card.escalation .value { color: var(--amber); }
+  .stat-card .sub { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 760px) {
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+
+  .panel h3 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px;
+    margin: 0 0 14px 0;
+    color: var(--text);
+  }
+  .panel h3 .accent { color: var(--signal); }
+
+  canvas { max-height: 260px; }
+
+  .escalation-list { display: flex; flex-direction: column; gap: 10px; }
+  .escalation-item {
+    background: var(--panel-raised);
+    border: 1px solid var(--amber-dim);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .escalation-item .meta {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 5px;
+  }
+  .escalation-item .msg {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+  .empty-state {
+    color: var(--text-dim);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px 0;
+  }
+
+  .hint {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    text-align: center;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .hint code { color: var(--signal); }
+
+  /* Auth gate (reused pattern from the chat UI) */
+  #authScreen { display: flex; flex-direction: column; gap: 14px; max-width: 360px; margin: 60px auto 0; }
+  #authScreen h2 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; margin: 0; }
+  #authScreen p { margin: 0; font-size: 13px; color: var(--text-dim); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+  .field input {
+    background: var(--panel-raised); border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 13px; color: var(--text); font-family: 'Inter', sans-serif; font-size: 14px; outline: none;
+  }
+  .field input:focus { border-color: var(--signal); }
+  #authSubmit {
+    background: var(--signal); color: #06201D; border: none; border-radius: 10px;
+    padding: 12px; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+  #authError { font-size: 12.5px; color: #F2879A; display: none; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div id="authScreen" class="panel">
+    <div>
+      <h2>Analytics sign-in</h2>
+      <p>Log in with an admin account (listed in <code>ADMIN_EMAILS</code>) to view the dashboard.</p>
+    </div>
+    <form id="authForm">
+      <div class="field">
+        <label for="emailInput">Email</label>
+        <input id="emailInput" type="email" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label for="passwordInput">Password</label>
+        <input id="passwordInput" type="password" autocomplete="current-password" required />
+      </div>
+      <p id="authError"></p>
+      <button id="authSubmit" type="submit">Log in</button>
+    </form>
+  </div>
+
+  <div id="dashboard" class="hidden">
+    <header>
+      <div class="brand">
+        <div class="mark">TM</div>
+        <div>
+          <h1>Support Analytics</h1>
+          <p>Cross-agent performance, routing, and escalation signal</p>
+        </div>
+      </div>
+      <div class="range-toggle" id="rangeToggle">
+        <button data-days="7">7d</button>
+        <button data-days="14" class="active">14d</button>
+        <button data-days="30">30d</button>
+      </div>
+    </header>
+
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="label">Conversations</div>
+        <div class="value" id="statConversations">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Messages</div>
+        <div class="value" id="statMessages">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Customers</div>
+        <div class="value" id="statUsers">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Avg. msgs / conversation</div>
+        <div class="value" id="statAvg">—</div>
+      </div>
+      <div class="stat-card escalation">
+        <div class="label">Escalation rate</div>
+        <div class="value" id="statEscalation">—</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Messages over time</h3>
+      <canvas id="messagesChart"></canvas>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Intent <span class="accent">distribution</span></h3>
+        <canvas id="intentChart"></canvas>
+      </div>
+      <div class="panel">
+        <h3>Agent <span class="accent">routing</span></h3>
+        <canvas id="agentChart"></canvas>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Recent escalations</h3>
+      <div class="escalation-list" id="escalationList"></div>
+    </div>
+
+    <p class="hint">Backend expected at <code>http://localhost:8000</code></p>
+  </div>
+</div>
+
+<script>
+  const API_BASE = "http://localhost:8000";
+  let authToken = null;
+  let currentDays = 14;
+  let charts = {};
+
+  const authScreen = document.getElementById("authScreen");
+  const dashboard = document.getElementById("dashboard");
+  const authForm = document.getElementById("authForm");
+  const authError = document.getElementById("authError");
+  const authSubmit = document.getElementById("authSubmit");
+
+  authForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    authError.style.display = "none";
+    authSubmit.disabled = true;
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: document.getElementById("emailInput").value.trim(),
+          password: document.getElementById("passwordInput").value,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Login failed.");
+      if (!data.user.is_admin) {
+        throw new Error("This account isn't an admin. Add its email to ADMIN_EMAILS in .env.");
+      }
+      authToken = data.access_token;
+      authScreen.classList.add("hidden");
+      dashboard.classList.remove("hidden");
+      loadAnalytics();
+    } catch (err) {
+      authError.textContent = err.message;
+      authError.style.display = "block";
+    } finally {
+      authSubmit.disabled = false;
+    }
+  });
+
+  document.getElementById("rangeToggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    document.querySelectorAll("#rangeToggle button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentDays = Number(btn.dataset.days);
+    loadAnalytics();
+  });
+
+  const CHART_COLORS = ["#2DD9C6", "#F5A623", "#7FB3FF", "#F2879A", "#B29CFF", "#8FA1B8"];
+
+  function upsertChart(id, config) {
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart(document.getElementById(id), config);
+  }
+
+  async function loadAnalytics() {
+    const res = await fetch(`${API_BASE}/api/analytics/summary?days=${currentDays}`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.detail || "Failed to load analytics.");
+      return;
+    }
+    const data = await res.json();
+
+    document.getElementById("statConversations").textContent = data.total_conversations;
+    document.getElementById("statMessages").textContent = data.total_messages;
+    document.getElementById("statUsers").textContent = data.total_users;
+    document.getElementById("statAvg").textContent = data.avg_messages_per_conversation;
+    document.getElementById("statEscalation").textContent =
+      `${Math.round(data.escalation_rate * 100)}%`;
+
+    upsertChart("messagesChart", {
+      type: "line",
+      data: {
+        labels: data.messages_by_day.map(d => d.date.slice(5)),
+        datasets: [{
+          label: "Messages",
+          data: data.messages_by_day.map(d => d.count),
+          borderColor: "#2DD9C6",
+          backgroundColor: "rgba(45,217,198,0.12)",
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+        }],
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#8FA1B8" }, grid: { color: "#223349" } },
+          y: { ticks: { color: "#8FA1B8" }, grid: { color: "#223349" }, beginAtZero: true },
+        },
+      },
+    });
+
+    const intentLabels = Object.keys(data.intent_counts);
+    upsertChart("intentChart", {
+      type: "bar",
+      data: {
+        labels: intentLabels,
+        datasets: [{
+          data: intentLabels.map(k => data.intent_counts[k]),
+          backgroundColor: CHART_COLORS,
+          borderRadius: 6,
+        }],
+      },
+      options: {
+        indexAxis: "y",
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: "#8FA1B8" }, grid: { color: "#223349" }, beginAtZero: true },
+          y: { ticks: { color: "#E7ECF3" }, grid: { display: false } },
+        },
+      },
+    });
+
+    const agentLabels = Object.keys(data.agent_counts);
+    upsertChart("agentChart", {
+      type: "doughnut",
+      data: {
+        labels: agentLabels,
+        datasets: [{
+          data: agentLabels.map(k => data.agent_counts[k]),
+          backgroundColor: CHART_COLORS,
+          borderColor: "#101D2E",
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        plugins: { legend: { position: "bottom", labels: { color: "#E7ECF3", boxWidth: 12 } } },
+      },
+    });
+
+    const list = document.getElementById("escalationList");
+    list.innerHTML = "";
+    if (!data.recent_escalations.length) {
+      list.innerHTML = '<div class="empty-state">No escalations in this window.</div>';
+    } else {
+      data.recent_escalations.forEach(e => {
+        const item = document.createElement("div");
+        item.className = "escalation-item";
+        item.innerHTML = `
+          <div class="meta">${e.session_id.slice(0, 8)} · ${new Date(e.timestamp).toLocaleString()}</div>
+          <div class="msg"></div>
+        `;
+        item.querySelector(".msg").textContent = e.message;
+        list.appendChild(item);
+      });
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+.venv
+__pycache__
+*.pyc
+.env
+.git
+node_modules
+frontend/dist
+frontend/node_modules
+backend/vectorstore/*.faiss
+backend/vectorstore/*.json
+backend/memory/*.db
+frontend-legacy-html

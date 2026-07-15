@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TechMart Support — Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0B1420;
+    --panel: #101D2E;
+    --panel-raised: #16263B;
+    --line: #223349;
+    --text: #E7ECF3;
+    --text-dim: #8FA1B8;
+    --signal: #2DD9C6;
+    --signal-dim: #1A5C56;
+    --amber: #F5A623;
+    --amber-dim: #4A3717;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, #10233a 0%, transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  .app { width: 100%; max-width: 980px; display: flex; flex-direction: column; gap: 20px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .mark {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--signal), #1596A9);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: #06201D;
+  }
+  .brand h1 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 0; }
+  .brand p { margin: 0; font-size: 12.5px; color: var(--text-dim); }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+
+  /* Auth gate (reused pattern from the chat UI) */
+  #authScreen { max-width: 420px; margin: 60px auto 0; padding: 28px 26px; display: flex; flex-direction: column; gap: 16px; }
+  #authScreen h2 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; margin: 0; }
+  #authScreen p.sub { margin: 0; font-size: 13px; color: var(--text-dim); }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+  .field input {
+    background: var(--panel-raised); border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 13px; color: var(--text); font-size: 14px; outline: none;
+  }
+  .field input:focus { border-color: var(--signal); }
+  #authError { font-size: 12.5px; color: #F2879A; display: none; }
+  #authSubmit {
+    background: var(--signal); color: #06201D; border: none; border-radius: 10px;
+    padding: 12px; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+  #authSubmit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Dashboard */
+  #dashboard { display: flex; flex-direction: column; gap: 20px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .kpi { padding: 18px; }
+  .kpi .label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 8px;
+  }
+  .kpi .value { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; }
+  .kpi .value.amber { color: var(--amber); }
+  .kpi .value.signal { color: var(--signal); }
+
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .charts .wide { grid-column: 1 / -1; }
+  .chart-card { padding: 18px; }
+  .chart-card h3 {
+    font-family: 'Space Grotesk', sans-serif; font-size: 13.5px; margin: 0 0 14px 0; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
+  }
+  .chart-wrap { position: relative; height: 240px; }
+
+  .empty {
+    padding: 40px; text-align: center; color: var(--text-dim); font-size: 13.5px;
+  }
+
+  .userbar { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-dim); }
+  .userbar button {
+    background: none; border: 1px solid var(--line); color: var(--text-dim); border-radius: 8px;
+    padding: 5px 10px; font-size: 11.5px; cursor: pointer; font-family: 'Inter', sans-serif;
+  }
+  .userbar button:hover { border-color: var(--signal); color: var(--signal); }
+  .hidden { display: none !important; }
+  .hint { font-size: 11.5px; color: var(--text-dim); text-align: center; font-family: 'IBM Plex Mono', monospace; }
+  .hint code { color: var(--signal); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="mark">TM</div>
+      <div>
+        <h1>Support Analytics</h1>
+        <p>Module 9 — conversation volume, routing, and escalation trends</p>
+      </div>
+    </div>
+    <div id="userbar" class="userbar hidden">
+      <span id="userGreeting"></span>
+      <button id="logoutBtn" type="button">Log out</button>
+    </div>
+  </header>
+
+  <div id="authScreen" class="panel">
+    <div>
+      <h2>Admin login</h2>
+      <p class="sub">Sign in with an account listed in <code>ADMIN_EMAILS</code> to view analytics.</p>
+    </div>
+    <form id="authForm">
+      <div class="field">
+        <label for="emailInput">Email</label>
+        <input id="emailInput" type="email" autocomplete="email" required />
+      </div>
+      <div class="field">
+        <label for="passwordInput">Password</label>
+        <input id="passwordInput" type="password" autocomplete="current-password" required minlength="8" />
+      </div>
+      <p id="authError"></p>
+      <button id="authSubmit" type="submit">Log in</button>
+    </form>
+  </div>
+
+  <div id="dashboard" class="hidden">
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">Conversations</div><div class="value" id="kpiConversations">—</div></div>
+      <div class="panel kpi"><div class="label">Messages</div><div class="value" id="kpiMessages">—</div></div>
+      <div class="panel kpi"><div class="label">Users</div><div class="value" id="kpiUsers">—</div></div>
+      <div class="panel kpi"><div class="label">Escalation rate</div><div class="value amber" id="kpiEscalation">—</div></div>
+      <div class="panel kpi"><div class="label">Multi-agent rate</div><div class="value signal" id="kpiMultiAgent">—</div></div>
+    </div>
+
+    <div class="charts">
+      <div class="panel chart-card wide">
+        <h3>Messages per day (last 14 days)</h3>
+        <div class="chart-wrap"><canvas id="timelineChart"></canvas></div>
+      </div>
+      <div class="panel chart-card">
+        <h3>Agent usage</h3>
+        <div class="chart-wrap"><canvas id="agentChart"></canvas></div>
+      </div>
+      <div class="panel chart-card">
+        <h3>Intent distribution</h3>
+        <div class="chart-wrap"><canvas id="intentChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="hint">Backend expected at <code>http://localhost:8000</code></p>
+</div>
+
+<script>
+  const API_BASE = "http://localhost:8000";
+  let authToken = null;
+  let currentUser = null;
+
+  const authScreen = document.getElementById("authScreen");
+  const dashboard = document.getElementById("dashboard");
+  const userbar = document.getElementById("userbar");
+  const userGreeting = document.getElementById("userGreeting");
+  const authForm = document.getElementById("authForm");
+  const authSubmit = document.getElementById("authSubmit");
+  const authError = document.getElementById("authError");
+  const emailInput = document.getElementById("emailInput");
+  const passwordInput = document.getElementById("passwordInput");
+
+  const CHART_COLORS = ["#2DD9C6", "#F5A623", "#5B8CFF", "#E27DFF", "#7EE787", "#FF8A8A", "#8FA1B8"];
+
+  authForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    authError.style.display = "none";
+    authSubmit.disabled = true;
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput.value.trim(), password: passwordInput.value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Login failed.");
+      authToken = data.access_token;
+      currentUser = data.user;
+      await loadDashboard();
+    } catch (err) {
+      authError.textContent = err.message;
+      authError.style.display = "block";
+    } finally {
+      authSubmit.disabled = false;
+    }
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    authToken = null;
+    currentUser = null;
+    dashboard.classList.add("hidden");
+    userbar.classList.add("hidden");
+    authScreen.classList.remove("hidden");
+    passwordInput.value = "";
+  });
+
+  async function loadDashboard() {
+    const res = await fetch(`${API_BASE}/api/analytics/summary?days=14`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (res.status === 403) {
+      authError.textContent = "This account isn't listed in ADMIN_EMAILS, so it can't view analytics.";
+      authError.style.display = "block";
+      return;
+    }
+    if (!res.ok) {
+      authError.textContent = "Couldn't load analytics. Is the backend running?";
+      authError.style.display = "block";
+      return;
+    }
+    const data = await res.json();
+
+    userGreeting.textContent = `Signed in as ${currentUser.name}`;
+    userbar.classList.remove("hidden");
+    authScreen.classList.add("hidden");
+    dashboard.classList.remove("hidden");
+
+    renderKpis(data);
+    renderTimeline(data.messages_per_day);
+    renderBarChart("agentChart", data.agent_usage, "Queries handled");
+    renderBarChart("intentChart", data.intent_distribution, "Occurrences");
+  }
+
+  function renderKpis(data) {
+    document.getElementById("kpiConversations").textContent = data.total_conversations;
+    document.getElementById("kpiMessages").textContent = data.total_messages;
+    document.getElementById("kpiUsers").textContent = data.total_users;
+    document.getElementById("kpiEscalation").textContent = `${data.escalation_rate}%`;
+    document.getElementById("kpiMultiAgent").textContent = `${data.multi_agent_rate}%`;
+  }
+
+  function renderTimeline(daily) {
+    new Chart(document.getElementById("timelineChart"), {
+      type: "line",
+      data: {
+        labels: daily.map(d => d.date.slice(5)),
+        datasets: [{
+          label: "Messages",
+          data: daily.map(d => d.messages),
+          borderColor: "#2DD9C6",
+          backgroundColor: "rgba(45,217,198,0.12)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+        }],
+      },
+      options: chartOptions(),
+    });
+  }
+
+  function renderBarChart(canvasId, counts, label) {
+    const entries = Object.entries(counts);
+    const canvas = document.getElementById(canvasId);
+    if (!entries.length) {
+      canvas.replaceWith(Object.assign(document.createElement("div"), {
+        className: "empty",
+        textContent: "No data yet — send a few chat messages first.",
+      }));
+      return;
+    }
+    new Chart(canvas, {
+      type: "bar",
+      data: {
+        labels: entries.map(([k]) => k),
+        datasets: [{
+          label,
+          data: entries.map(([, v]) => v),
+          backgroundColor: entries.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]),
+          borderRadius: 6,
+        }],
+      },
+      options: { ...chartOptions(), indexAxis: entries.length > 4 ? "y" : "x" },
+    });
+  }
+
+  function chartOptions() {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#8FA1B8", font: { family: "IBM Plex Mono", size: 10 } }, grid: { color: "#223349" } },
+        y: { ticks: { color: "#8FA1B8", font: { family: "IBM Plex Mono", size: 10 } }, grid: { color: "#223349" }, beginAtZero: true },
+      },
+    };
+  }
+</script>
+</body>
+</html>

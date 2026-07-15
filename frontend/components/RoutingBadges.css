@@ -1,0 +1,23 @@
+.routing-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  background: transparent;
+}
+
+.badge--escalate {
+  border-color: var(--warn-soft);
+  color: var(--warn);
+}
