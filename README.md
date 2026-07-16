@@ -357,6 +357,26 @@ plan and disable autoscaling), or migrate `conversation_memory.py` to
 MongoDB as well (same pattern as `user_store.py` — this is a natural next
 step if you want it).
 
+### 7.6 Troubleshooting: "CORS header missing" but the endpoint is a 500
+
+If the browser console reports something like *"Cross-Origin Request
+Blocked... Access-Control-Allow-Origin missing"* alongside a **500 status
+code**, don't just re-check `ALLOWED_ORIGINS` — a 500 means the request
+reached the backend and crashed there. Starlette/FastAPI only attach CORS
+headers to responses that come back through the middleware normally; an
+*unhandled* exception bypasses that and shows up in the browser as a missing
+CORS header, which is misleading. This app registers a catch-all exception
+handler (`backend/main.py`) specifically so this doesn't happen — genuine
+crashes still return CORS headers, just with a clean `{"detail": ...}` body
+instead of a raw traceback. `/api/auth/signup` and `/api/auth/login`
+specifically return a `503` with a clear message if MongoDB is unreachable
+(wrong `MONGODB_URI`, Atlas Network Access not allowing your host's IP,
+etc.) rather than a bare crash.
+
+Either way, check your host's logs (Render: Logs tab; Railway: Deployments →
+View Logs) for the actual exception — that's always more informative than
+the browser console alone.
+
 ## 8. What's simplified vs. the full spec (and why)
 
 This is a runnable prototype, not the full production build described in the

@@ -71,4 +71,9 @@ ADMIN_EMAILS = {
 }
 
 # --- CORS ---
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+# Comma-separated list of allowed frontend origins, or "*" for all. Each
+# entry is stripped of whitespace so accidental spaces around commas (or in
+# a pasted value) don't cause a silent origin mismatch.
+ALLOWED_ORIGINS = [
+    origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",") if origin.strip()
+]

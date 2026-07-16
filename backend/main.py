@@ -5,14 +5,17 @@ Run with:
     uvicorn backend.main:app --reload --port 8000
 (run from the project root, one level above backend/)
 """
+import logging
 import sys
 import uuid
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pymongo.errors import PyMongoError
 
 from backend import config
 from backend.analytics import service as analytics_service
@@ -35,6 +38,8 @@ from backend.models import (
     UserOut,
 )
 from backend.agents.router import get_router
+
+logger = logging.getLogger("techmart_support")
 
 app = FastAPI(
     title="TechMart Multi-Agent Customer Support API",
@@ -69,6 +74,26 @@ def _to_user_out(user: dict) -> UserOut:
     )
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all so every response — including crashes — goes back through
+    CORSMiddleware with the right headers attached.
+
+    FastAPI/Starlette's CORSMiddleware only adds Access-Control-Allow-Origin
+    to responses it sees returned normally. An exception that propagates all
+    the way up to the ASGI server's default error handler never passes back
+    through CORSMiddleware, so the browser reports a *missing CORS header*
+    even though the real problem is a 500 — which is confusing to debug from
+    the browser console alone. Catching it here and returning a real
+    JSONResponse means CORSMiddleware gets to do its job either way.
+    """
+    logger.exception(f"Unhandled exception on {request.method} {request.url.path}: {exc}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error. Please try again."},
+    )
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
@@ -84,6 +109,12 @@ def signup(request: SignupRequest):
         user = create_user(request.email, request.name, request.password)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except PyMongoError as e:
+        logger.error(f"MongoDB error during signup: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account service is temporarily unavailable. Please try again shortly.",
+        )
 
     token = create_access_token(user["id"])
     return TokenResponse(access_token=token, user=_to_user_out(user))
@@ -91,7 +122,15 @@ def signup(request: SignupRequest):
 
 @app.post("/api/auth/login", response_model=TokenResponse)
 def login(request: LoginRequest):
-    user = get_user_by_email(request.email)
+    try:
+        user = get_user_by_email(request.email)
+    except PyMongoError as e:
+        logger.error(f"MongoDB error during login: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account service is temporarily unavailable. Please try again shortly.",
+        )
+
     if not user or not verify_password(request.password, user["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
