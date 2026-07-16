@@ -56,8 +56,9 @@ customer-support-ai/
 │   ├── hooks/                        useAuth, useChat, useSessions, useAnalytics
 │   ├── services/                      Thin fetch wrappers around the backend API
 │   └── styles/                         Theme tokens + global rules
-├── Dockerfile                    Backend container image (used by Railway)
+├── Dockerfile                    Backend container image (used by Railway/Render)
 ├── railway.json                  Railway deploy config
+├── render.yaml                    Render Blueprint config (alternative to Railway)
 ├── docker-compose.yml             Local dev: backend + MongoDB together
 ├── .dockerignore
 ├── .env.example
@@ -262,27 +263,28 @@ etc.) for you.
 
 ## 7. Deployment
 
-Deploy config included: **Railway** for the backend (Dockerfile), **Vercel**
-for the frontend (static Vite build), **MongoDB Atlas** for user accounts.
-Conversation memory and the FAISS vector store stay on local files by
-design (see the note on persistence below) — no other services required.
+Deploy config included: **Railway or Render** for the backend (both use the
+same `Dockerfile`), **Vercel** for the frontend (static Vite build),
+**MongoDB Atlas** for user accounts. Conversation memory and the FAISS
+vector store stay on local files by design (see the note on persistence
+below) — no other services required.
 
-### 9.1 MongoDB Atlas (user accounts)
+### 7.1 MongoDB Atlas (user accounts)
 
 1. Create a free cluster at https://www.mongodb.com/cloud/atlas/register.
 2. Add a database user (Database Access) and allow access from anywhere —
    `0.0.0.0/0` — under Network Access (fine for this project; tighten to
-   Railway's static IPs if you're on a paid Railway plan that provides them).
+   your host's static IPs if it provides them on a paid plan).
 3. Copy the connection string (Database → Connect → Drivers), which looks
    like `mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority`.
    That's your `MONGODB_URI`.
 
-### 9.2 Backend on Railway
+### 7.2 Backend — option A: Railway
 
 1. https://railway.app → New Project → Deploy from GitHub repo (push this
    project to GitHub first). Railway detects `Dockerfile` and `railway.json`
    automatically.
-2. Under Variables, set: `MONGODB_URI` (from 9.1), `MONGODB_DB_NAME`,
+2. Under Variables, set: `MONGODB_URI` (from 7.1), `MONGODB_DB_NAME`,
    `HF_TOKEN`, `HF_MODEL`, `JWT_SECRET` (generate with
    `python -c "import secrets; print(secrets.token_hex(32))"`), `ADMIN_EMAILS`,
    and `ALLOWED_ORIGINS` (set this to your Vercel frontend URL once you have
@@ -292,19 +294,43 @@ design (see the note on persistence below) — no other services required.
 4. Confirm `https://<your-app>.up.railway.app/api/health` returns
    `{"status": "ok"}`.
 
-### 9.3 Frontend on Vercel
+### 7.2b Backend — option B: Render
+
+An alternative to Railway using the same Dockerfile — pick one, not both.
+
+1. Push this repo to GitHub (if not already).
+2. https://dashboard.render.com → **New > Blueprint** → connect the repo.
+   Render finds `render.yaml` at the repo root automatically and proposes
+   one web service (`techmart-support-backend`) built from `Dockerfile`.
+3. Click through the Blueprint deploy. For any env var marked `sync: false`
+   in `render.yaml` (`MONGODB_URI`, `HF_TOKEN`, `ADMIN_EMAILS`,
+   `ALLOWED_ORIGINS`), Render prompts you for a value before deploying —
+   fill those in (see 7.1 for `MONGODB_URI`). `JWT_SECRET` is generated
+   automatically (`generateValue: true`), no need to set it yourself.
+4. Render assigns a public URL like `https://techmart-support-backend.onrender.com`
+   and injects its own `PORT` — again, no Dockerfile changes needed.
+5. Confirm `https://<your-app>.onrender.com/api/health` returns
+   `{"status": "ok"}`.
+6. **Free tier note**: Render's free web services spin down after ~15
+   minutes of inactivity and take 30–60s to wake back up on the next
+   request — the person's first message after idle time will be slow while
+   the container restarts and reloads the embedding model. Paid plans avoid
+   this.
+
+### 7.3 Frontend on Vercel
 
 1. https://vercel.com → New Project → import the same GitHub repo.
 2. Set **Root Directory** to `frontend`. Vercel auto-detects the Vite
    preset; `frontend/vercel.json` handles SPA routing (so refreshing
    `/analytics` doesn't 404).
-3. Add an environment variable `VITE_API_BASE_URL` = your Railway backend
-   URL from 9.2 (e.g. `https://your-app.up.railway.app`) — this is baked in
-   at build time, so redeploy after changing it.
-4. Deploy. Go back to Railway and update `ALLOWED_ORIGINS` to this Vercel
-   URL if you hadn't yet, and redeploy the backend.
+3. Add an environment variable `VITE_API_BASE_URL` = your backend URL from
+   7.2 or 7.2b (e.g. `https://your-app.up.railway.app` or
+   `https://your-app.onrender.com`) — this is baked in at build time, so
+   redeploy after changing it.
+4. Deploy. Go back to your backend host and update `ALLOWED_ORIGINS` to this
+   Vercel URL if you hadn't yet, and redeploy the backend.
 
-### 9.4 Local full-stack testing with Docker
+### 7.4 Local full-stack testing with Docker
 
 ```bash
 cp .env.example .env   # fill in HF_TOKEN, JWT_SECRET, etc.
@@ -314,20 +340,22 @@ docker compose up --build
 This starts a local MongoDB container and the backend together (frontend
 still runs separately via `npm run dev` — Compose only covers the backend +
 its database here). Useful for confirming the Dockerfile/Mongo wiring works
-before pushing to Railway.
+before pushing to Railway or Render.
 
-### 9.5 A note on persistence
+### 7.5 A note on persistence
 
 Conversation history (SQLite, `backend/memory/`) and the FAISS vector index
 (`backend/vectorstore/`) are local files. That's fine for `docker compose`
 with the volumes it defines, but **most PaaS free tiers (including Railway's
-default filesystem) are ephemeral** — a redeploy or restart can wipe them.
-The vector store rebuilds itself automatically from `knowledge_base/` on
-next startup, so that's low-stakes. Conversation history is not automatically
-rebuilt, though — if you need it to survive redeploys on Railway, either
-attach a Railway Volume mounted at `/app/backend/memory`, or migrate
-`conversation_memory.py` to MongoDB as well (same pattern as
-`user_store.py` — this is a natural next step if you want it).
+and Render's default filesystems) are ephemeral** — a redeploy, restart, or
+(on Render's free tier) spin-down/spin-up cycle can wipe them. The vector
+store rebuilds itself automatically from `knowledge_base/` on next startup,
+so that's low-stakes. Conversation history is not automatically rebuilt,
+though — if you need it to survive redeploys, either attach a persistent
+volume (Railway Volume, or a Render Disk — note Render Disks require a paid
+plan and disable autoscaling), or migrate `conversation_memory.py` to
+MongoDB as well (same pattern as `user_store.py` — this is a natural next
+step if you want it).
 
 ## 8. What's simplified vs. the full spec (and why)
 

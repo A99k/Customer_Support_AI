@@ -1,0 +1,63 @@
+# Render Blueprint — alternative to railway.json for deploying the backend.
+# https://render.com/docs/blueprint-spec
+#
+# Usage: push this repo to GitHub, then in the Render Dashboard choose
+# New > Blueprint and point it at the repo. Render finds this file
+# automatically (must be named render.yaml at the repo root).
+#
+# Uses the same Dockerfile as the Railway config — no separate build setup
+# needed. Render injects its own PORT env var at runtime, which the
+# Dockerfile's CMD already reads.
+services:
+  - type: web
+    name: techmart-support-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      # --- MongoDB (user accounts) ---
+      - key: MONGODB_URI
+        sync: false # paste your MongoDB Atlas connection string in the Render Dashboard
+      - key: MONGODB_DB_NAME
+        value: techmart_support
+
+      # --- Hugging Face LLM ---
+      - key: HF_TOKEN
+        sync: false
+      - key: HF_MODEL
+        value: Qwen/Qwen2.5-7B-Instruct
+      - key: HF_PROVIDER
+        value: auto
+      - key: HF_MAX_TOKENS
+        value: "512"
+      - key: HF_TEMPERATURE
+        value: "0.3"
+
+      # --- Auth ---
+      - key: JWT_SECRET
+        generateValue: true # Render generates a secure random value on first deploy
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRE_MINUTES
+        value: "1440"
+      - key: ADMIN_EMAILS
+        sync: false
+
+      # --- RAG / embeddings ---
+      - key: EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: CHUNK_SIZE
+        value: "500"
+      - key: CHUNK_OVERLAP
+        value: "80"
+      - key: TOP_K
+        value: "3"
+
+      # --- CORS ---
+      # Set this to your deployed frontend's URL once you have it, e.g.
+      # https://your-app.vercel.app. Using "*" works but is not recommended
+      # once real users are hitting this.
+      - key: ALLOWED_ORIGINS
+        sync: false
