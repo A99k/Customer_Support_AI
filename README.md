@@ -4,7 +4,8 @@ A working prototype of the multi-agent customer support system described in
 the project brief: an **Intent Detection Agent** routes each customer message
 through an **Agent Router** to one or more **specialized agents** (Billing,
 Technical, Product, Complaint, FAQ), each of which pulls relevant context from
-a company knowledge base via **RAG** (FAISS + sentence-transformers) and
+a company knowledge base via **RAG** (FAISS + embeddings computed remotely
+via the Hugging Face Inference API) and
 generates a reply using a **Hugging Face**-hosted LLM. A **Response
 Aggregator** merges multi-agent replies into one coherent answer, and a
 SQLite-backed **Conversation Memory** stores every turn.
@@ -376,6 +377,27 @@ etc.) rather than a bare crash.
 Either way, check your host's logs (Render: Logs tab; Railway: Deployments →
 View Logs) for the actual exception — that's always more informative than
 the browser console alone.
+
+### 7.7 Troubleshooting: 502 on `/api/chat`, logs stop mid-request with no traceback
+
+This is almost always an **out-of-memory crash**. `/api/chat` is the
+heaviest endpoint — the first request loads the FAISS index and calls out to
+Hugging Face. If the process log shows something starting (e.g. "Loading
+embedding model...") and then just *stops*, with no Python traceback at all,
+that's the Linux OOM killer sending `SIGKILL` — the process dies before
+Python gets a chance to log anything, and the proxy in front of it (Render,
+Railway) returns a bare `502` with no CORS headers, since there was no
+response at all.
+
+Free tiers of most PaaS providers cap around 512MB RAM. This app computes
+embeddings via the Hugging Face API rather than loading a local
+`sentence-transformers`/`torch` model specifically to avoid this — `torch`
+alone is over 1GB on disk and can easily exceed a 512MB limit just being
+imported, regardless of how small your knowledge base is. If you're on an
+older version of this repo (or reintroduced a local embedding model), that's
+the first thing to check. Otherwise, check your host's memory graph
+(Render: Metrics tab) for a spike to 100% right before the crash, and
+consider a paid tier with more RAM if it's still happening.
 
 ## 8. What's simplified vs. the full spec (and why)
 

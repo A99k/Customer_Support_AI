@@ -28,6 +28,10 @@ HF_MAX_TOKENS = int(os.getenv("HF_MAX_TOKENS", "512"))
 HF_TEMPERATURE = float(os.getenv("HF_TEMPERATURE", "0.3"))
 
 # --- Embeddings / RAG settings ---
+# Computed via HF's remote feature-extraction API (backend/llm/hf_client.py's
+# embed()), not a locally-loaded model — see that file for why. Any
+# sentence-embedding model available via HF Inference Providers works here;
+# all-MiniLM-L6-v2 is small, fast, and widely supported.
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 KNOWLEDGE_BASE_DIR = BASE_DIR / "knowledge_base"
 VECTORSTORE_DIR = BASE_DIR / "backend" / "vectorstore"

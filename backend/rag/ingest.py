@@ -1,8 +1,14 @@
 """
 Ingests every document in knowledge_base/ (.md, .txt, .pdf), splits it into
-overlapping chunks, embeds the chunks with a sentence-transformers model,
-and persists a FAISS index + metadata to disk so the API doesn't have to
-re-embed on every restart.
+overlapping chunks, embeds the chunks via Hugging Face's remote
+feature-extraction API, and persists a FAISS index + metadata to disk so the
+API doesn't have to re-embed on every restart.
+
+Embeddings are computed remotely (not with a locally-loaded
+sentence-transformers/torch model) specifically to keep this process's
+memory footprint small — loading torch alone can use 500MB+ of RAM, enough
+to OOM-kill the whole app on memory-constrained hosts like Render's free
+tier. See backend/llm/hf_client.py's embed() for details.
 
 Run manually with:
     python -m backend.rag.ingest
@@ -14,10 +20,10 @@ from pathlib import Path
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from backend import config
+from backend.llm.hf_client import get_hf_client
 
 
 def _read_pdf(path: Path) -> str:
@@ -57,6 +63,28 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
+def _normalize(vectors: np.ndarray) -> np.ndarray:
+    """L2-normalize each row so FAISS's inner product acts as cosine
+    similarity. Done locally rather than relying on the API's `normalize`
+    param, since that's only guaranteed on Text-Embedding-Inference-backed
+    providers — normalizing ourselves works regardless of which provider
+    HF_PROVIDER routes to."""
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms[norms == 0] = 1  # avoid divide-by-zero for an all-zero vector
+    return vectors / norms
+
+
+def embed_texts(texts: list[str], batch_size: int = 32) -> np.ndarray:
+    """Embed a list of strings via the HF API, batching to keep individual
+    requests reasonably sized."""
+    client = get_hf_client()
+    all_vectors: list[list[float]] = []
+    for i in range(0, len(texts), batch_size):
+        batch = texts[i:i + batch_size]
+        all_vectors.extend(client.embed(batch))
+    return np.asarray(all_vectors, dtype="float32")
+
+
 def build_index() -> None:
     config.VECTORSTORE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -74,12 +102,11 @@ def build_index() -> None:
             chunks.append(chunk)
             metadata.append({"source": doc["source"], "text": chunk})
 
-    print(f"Split into {len(chunks)} chunks. Loading embedding model "
-          f"'{config.EMBEDDING_MODEL}'...")
+    print(f"Split into {len(chunks)} chunks. Embedding via Hugging Face "
+          f"('{config.EMBEDDING_MODEL}')...")
 
-    model = SentenceTransformer(config.EMBEDDING_MODEL)
-    embeddings = model.encode(chunks, show_progress_bar=True, normalize_embeddings=True)
-    embeddings = np.asarray(embeddings, dtype="float32")
+    embeddings = embed_texts(chunks)
+    embeddings = _normalize(embeddings)
 
     dimension = embeddings.shape[1]
     index = faiss.IndexFlatIP(dimension)  # cosine similarity via normalized vectors

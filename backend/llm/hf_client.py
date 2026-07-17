@@ -78,6 +78,30 @@ class HFClient:
             )
 
 
+    def embed(self, texts: list[str], model: str = None) -> list[list[float]]:
+        """Embed a batch of strings via HF's remote feature-extraction API.
+
+        Deliberately does NOT load a local sentence-transformers/torch model —
+        that combination can use 500MB+ of RAM just to import, which is
+        enough to OOM-kill the whole process on memory-constrained hosts
+        (e.g. Render's free tier). Computing embeddings remotely keeps the
+        backend's own memory footprint small, at the cost of a network round
+        trip per ingest/query.
+
+        Unlike generate(), this raises on failure rather than returning a
+        fallback string — callers (ingest.py, retriever.py) need to know
+        embedding actually failed rather than silently indexing garbage.
+        """
+        embedding_model = model or config.EMBEDDING_MODEL
+        result = self._client.feature_extraction(texts, model=embedding_model)
+        # feature_extraction returns a numpy array; convert to plain lists so
+        # callers don't need numpy as a hard dependency just to type-check.
+        return [list(map(float, row)) for row in result]
+
+    def embed_one(self, text: str, model: str = None) -> list[float]:
+        return self.embed([text], model=model)[0]
+
+
 _client_instance: HFClient | None = None
 
 
