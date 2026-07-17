@@ -28,25 +28,43 @@ from backend import config
 # than hidden in a closure) so tests can swap in a mongomock collection
 # without needing a real MongoDB server.
 #
-# serverSelectionTimeoutMS keeps a misconfigured/unreachable MONGODB_URI from
-# hanging the whole app — operations fail fast with a clear PyMongoError
-# instead of hanging indefinitely.
-_client = MongoClient(config.MONGODB_URI, serverSelectionTimeoutMS=5000)
-_db = _client[config.MONGODB_DB_NAME]
-users_collection = _db["users"]
-
+# IMPORTANT: unlike the actual network connection (which pymongo makes
+# lazily, on first operation), MongoClient(...) validates the URI's *syntax*
+# eagerly at construction time — a malformed URI (e.g. an unescaped special
+# character in the password) raises immediately, here, at import time. If
+# that's not caught, the entire app crashes on startup instead of just the
+# auth endpoints failing. So this whole block — both construction and the
+# index creation — is wrapped, and users_collection falls back to None on
+# any failure; every function below checks for that and raises a clear,
+# catchable PyMongoError instead of a bare AttributeError or import crash.
+users_collection = None
 try:
+    _client = MongoClient(config.MONGODB_URI, serverSelectionTimeoutMS=5000)
+    _db = _client[config.MONGODB_DB_NAME]
+    users_collection = _db["users"]
     # Enforce email uniqueness at the database level (in addition to the
     # application-level check in create_user), so a race between two
     # concurrent signups with the same email can't create two accounts.
+    # This also forces pymongo to actually attempt a connection now, so
+    # unreachable (as opposed to just malformed) URIs are caught here too.
     users_collection.create_index("email", unique=True)
 except PyMongoError as e:
+    users_collection = None
     print(
-        f"WARNING: Could not reach MongoDB at startup ({e}). "
-        f"Check MONGODB_URI in .env — is MongoDB running locally, or is your "
-        f"Atlas connection string correct? Auth endpoints will fail until "
-        f"this is resolved."
+        f"WARNING: MongoDB is not usable ({type(e).__name__}: {e}). Check "
+        f"MONGODB_URI in .env — common causes: MongoDB isn't running/"
+        f"reachable, or the connection string has an un-escaped special "
+        f"character in the username/password (use urllib.parse.quote_plus "
+        f"on each part). Auth endpoints will return a clean 503 until this "
+        f"is fixed; the rest of the app is unaffected."
     )
+
+
+def _require_collection():
+    if users_collection is None:
+        raise PyMongoError(
+            "MongoDB is not configured correctly (see startup warning in logs)."
+        )
 
 
 def hash_password(password: str) -> str:
@@ -76,6 +94,7 @@ def _to_public_dict(doc: dict) -> dict:
 
 
 def create_user(email: str, name: str, password: str) -> dict:
+    _require_collection()
     email = email.strip().lower()
     user_id = str(uuid.uuid4())
     password_hash = hash_password(password)
@@ -98,6 +117,7 @@ def create_user(email: str, name: str, password: str) -> dict:
 
 
 def get_user_by_email(email: str) -> dict | None:
+    _require_collection()
     email = email.strip().lower()
     doc = users_collection.find_one({"email": email})
     if not doc:
@@ -112,6 +132,7 @@ def get_user_by_email(email: str) -> dict | None:
 
 
 def get_user_by_id(user_id: str) -> dict | None:
+    _require_collection()
     doc = users_collection.find_one({"_id": user_id})
     if not doc:
         return None

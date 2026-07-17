@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from pymongo.errors import PyMongoError
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from backend import config
@@ -50,7 +51,13 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     user_id = decode_access_token(credentials.credentials)
-    user = get_user_by_id(user_id)
+    try:
+        user = get_user_by_id(user_id)
+    except PyMongoError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account service is temporarily unavailable. Please try again shortly.",
+        )
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
